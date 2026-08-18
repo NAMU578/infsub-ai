@@ -36,11 +36,22 @@ const GRADE_SYS = `너는 한국 고등학교 정보 과목의 채점 교사다.
 출력은 아래 형태의 JSON 하나뿐이다. 설명, 인사말, 마크다운 코드펜스를 절대 붙이지 않는다.
 {"correct":true,"feedback":"...","model_answer":"..."}`;
 
+const CHAT_SYS = `너는 한국 고등학교 정보 과목의 보조 교사다. 학생이 수업 노트북에서 직접 고른 부분에 대해 질문한다.
+
+규칙
+- 한국어로, 세 문단을 넘기지 않게 짧게 답한다.
+- 학생이 고른 부분을 근거로 설명한다. 거기에 없는 내용을 말할 때는 추측임을 밝힌다.
+- 코드 예시는 필요할 때만, 짧게 넣는다.
+- 과제 답을 통째로 대신 써 주지 않는다. 스스로 풀도록 원리와 힌트를 준다.
+- 정보 과목·프로그래밍과 관계없는 잡담에는 답하지 않고 한 줄로 거절한다.
+
+마크다운으로 답한다.`;
+
 class HttpError extends Error {
   constructor(message, status) { super(message); this.status = status; }
 }
 
-async function callClaude(env, system, user, maxTokens = 1200) {
+async function callClaude(env, system, user, maxTokens = 1200, raw = false) {
   const key = env.ANTHROPIC_API_KEY;
   if (!key) throw new HttpError('서술형 기능이 설정되지 않았습니다 (ANTHROPIC_API_KEY 없음)', 503);
 
@@ -56,7 +67,7 @@ async function callClaude(env, system, user, maxTokens = 1200) {
       model: env.MODEL || 'claude-sonnet-5',
       max_tokens: maxTokens,
       system,
-      messages: [{ role: 'user', content: user }],
+      messages: Array.isArray(user) ? user : [{ role: 'user', content: user }],
     }),
   });
 
@@ -71,6 +82,7 @@ async function callClaude(env, system, user, maxTokens = 1200) {
 
   const j = await r.json();
   const text = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
+  if (raw) return { text };
   const clean = text.replace(/```json|```/g, '').trim();
   try { return JSON.parse(clean); }
   catch {
@@ -91,6 +103,17 @@ async function runTask(env, body) {
     return await callClaude(env, GRADE_SYS,
       `문제: ${String(body.question || '').slice(0, 1500)}\n\n채점 기준: ${String(body.rubric || '').slice(0, 1500)}\n\n학생 답안: ${String(body.answer || '').slice(0, 3000)}`,
       700);
+  }
+  if (body.task === 'chat') {
+    const ctx = String(body.context || '').slice(0, 3000);
+    if (!ctx.trim()) throw new HttpError('질문할 부분이 비어 있습니다', 400);
+    const msgs = (Array.isArray(body.messages) ? body.messages : [])
+      .slice(-16)
+      .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user',
+                   content: String(m.content || '').slice(0, 2000) }))
+      .filter(m => m.content);
+    if (!msgs.length || msgs[msgs.length - 1].role !== 'user') throw new HttpError('질문이 비어 있습니다', 400);
+    return await callClaude(env, `${CHAT_SYS}\n\n=== 학생이 고른 부분 ===\n${ctx}`, msgs, 700, true);
   }
   throw new HttpError('알 수 없는 요청입니다', 400);
 }

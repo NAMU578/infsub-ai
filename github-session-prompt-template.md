@@ -10,12 +10,12 @@
 [레포 1]
 - owner/repo: NAMU578/INFSUB
 - 기본 브랜치: main
-- 토큰: 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
+- 토큰: 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
 
 [레포 2]
 - owner/repo: NAMU578/infsub-ai
 - 기본 브랜치: main
-- 토큰: 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
+- 토큰: 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
 
 작업 모드: PR (기본값) / 직접 push (명시적으로 요청할 때만)
 ```

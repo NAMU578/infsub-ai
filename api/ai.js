@@ -21,6 +21,7 @@ const MAKE_SYS = `너는 한국 고등학교 정보 과목의 출제 교사다.
 - 서술형이므로 답이 한 단어로 끝나면 안 된다. "왜", "어떻게", "무슨 차이", "어떤 일이 일어나는지" 같은 설명을 요구한다.
 - 코드가 필요하면 code 필드에 짧은 파이썬 코드를 넣고, 필요 없으면 빈 문자열로 둔다.
 - rubric에는 정답으로 인정할 핵심 요소를 2~4개 적는다.
+- "이미 있는 문제" 목록이 주어지면, 그 문제들과 묻는 내용이 같거나 표현만 바꾼 문제는 내지 않는다. 다른 개념이나 다른 관점을 고른다.
 
 출력은 아래 형태의 JSON 하나뿐이다. 설명, 인사말, 마크다운 코드펜스를 절대 붙이지 않는다.
 {"question":"...","code":"","rubric":"...","model_answer":"..."}`;
@@ -96,8 +97,14 @@ async function runTask(env, body) {
   if (body.task === 'make') {
     const ctx = String(body.context || '').slice(0, 6000);
     if (!ctx.trim()) throw new HttpError('노트북 내용이 비어 있습니다', 400);
+    const avoid = (Array.isArray(body.avoid) ? body.avoid : [])
+      .map(t => String(t || '').replace(/\s+/g, ' ').trim().slice(0, 160))
+      .filter(Boolean).slice(0, 20);
+    const avoidText = avoid.length
+      ? `\n\n=== 이미 있는 문제 (같거나 비슷한 문제 금지) ===\n${avoid.map((t, i) => `${i + 1}. ${t}`).join('\n')}`
+      : '';
     return await callClaude(env, MAKE_SYS,
-      `노트북 이름: ${String(body.notebook || '').slice(0, 80)}\n\n=== 노트북 내용 ===\n${ctx}`);
+      `노트북 이름: ${String(body.notebook || '').slice(0, 80)}\n\n=== 노트북 내용 ===\n${ctx}${avoidText}`);
   }
   if (body.task === 'grade') {
     return await callClaude(env, GRADE_SYS,
